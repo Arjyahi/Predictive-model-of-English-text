@@ -1,0 +1,205 @@
+---
+title: 'Peer-graded Assignment: Milestone Report'
+author: "Arjyahi Bhattacharya"
+date: "17/07/2021"
+output: html_document
+---
+# Exploratory Data Analysis
+## Synopsis
+The goal of the Data Science Capstone Project is to use the skills acquired in the specialization in creating an application based on a predictive model for text. Given a word or phrase as input, the application will try to predict the next word. The predictive model will be trained using a corpus, a collection of written texts, called the HC Corpora which has been filtered by language.
+
+This report is an EDA of the training data supplied for the capstone project. The Data can be found here: (https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip)
+
+In addition to loading and cleaning the data, the aim here is to make use of the NLP packages for R to tokenize n-grams as a first step toward testing a Markov model for prediction.
+
+## Load the libraries
+```{r}
+library(ggplot2)
+library(NLP)
+library(tm)
+library(RWeka)
+library(stringi)
+library(data.table)
+library(dplyr)
+library(RColorBrewer)
+library(wordcloud)
+library(SnowballC)
+library(pander)
+library(caret)
+```
+
+## Loading data
+```{r,cache=TRUE}
+news <- readLines("D:/RStudio/Documents/Capstone/NLP/Coursera-SwiftKey/final/en_US/en_US.news.txt",encoding="UTF-8", skipNul = TRUE, warn = FALSE)
+blogs<- readLines("D:/RStudio/Documents/Capstone/NLP/Coursera-SwiftKey/final/en_US/en_US.blogs.txt",encoding="UTF-8", skipNul = TRUE, warn = FALSE)
+twitter<- readLines("D:/RStudio/Documents/Capstone/NLP/Coursera-SwiftKey/final/en_US/en_US.twitter.txt",encoding="UTF-8", skipNul = TRUE, warn = FALSE)
+```
+
+## Summarise the data
+```{r, cache=TRUE}
+blogs_size <- file.info("D:/RStudio/Documents/Capstone/NLP/Coursera-SwiftKey/final/en_US/en_US.blogs.txt")$size / 1024 ^ 2
+news_size <- file.info("D:/RStudio/Documents/Capstone/NLP/Coursera-SwiftKey/final/en_US/en_US.news.txt")$size / 1024 ^ 2
+twitter_size <- file.info("D:/RStudio/Documents/Capstone/NLP/Coursera-SwiftKey/final/en_US/en_US.twitter.txt")$size / 1024 ^ 2
+pop_summary <- data.frame('File' = c("Blogs","News","Twitter"),
+                      "FileSizeinMB" = c(blogs_size, news_size, twitter_size),
+                      'NumberofLines' = sapply(list(blogs, news, twitter), function(x){length(x)}),
+                      'TotalCharacters' = sapply(list(blogs, news, twitter), function(x){sum(nchar(x))}),
+                      'TotalWords' = sapply(list(blogs,news,twitter),stri_stats_latex)[4,],
+                      'MaxCharacters' = sapply(list(blogs, news, twitter), function(x){max(unlist(lapply(x, function(y) nchar(y))))})
+                      )
+pop_summary
+```
+## Sample the data
+```{r, cache=TRUE}
+set.seed(1130)
+samp_size = 5000
+
+news_samp <- news[sample(1:length(news),samp_size)]
+twitter_samp <- twitter[sample(1:length(twitter),samp_size)]
+blogs_samp<- blogs[sample(1:length(blogs),samp_size)]
+
+invisible(write.table(blogs_samp, file="blog_samp.txt", quote=F))
+invisible(write.table(twitter_samp, file="twitter_samp.txt", quote=F))
+invisible(write.table(news_samp, file="news_samp.txt", quote=F))
+
+df <-rbind(news_samp,twitter_samp,blogs_samp)
+rm(news,twitter,blogs)
+wd<- file.path("D:/RStudio/Documents/Capstone/NLP/Coursera-SwiftKey/final/en_US")
+dir(wd)
+```
+
+The size of the data sets being evaluated is important, so word and line counts are calculated.
+```{r}
+BlogWords <- stri_count_words(blogs_samp)
+summary(BlogWords)
+
+TwitterWords <- stri_count_words(twitter_samp)
+summary(TwitterWords)
+
+NewsWords <- stri_count_words(news_samp)
+summary(NewsWords)
+
+stri_stats_general(blogs_samp)
+
+stri_stats_general(twitter_samp)
+
+stri_stats_general(news_samp)
+
+invisible(write.table(blogs_samp, file="blog_samp.txt", quote=F))
+invisible(write.table(twitter_samp, file="twitter_samp.txt", quote=F))
+invisible(write.table(news_samp, file="news_samp.txt", quote=F))
+```
+## Corpus
+In text mining, a corpus is created to facilitate statistical analysis, hypothesis testing and to account for occurances.
+```{r}
+docs <- VCorpus(DirSource(wd))
+summary(docs)
+
+inspect(docs[1])
+
+inspect(docs[2])
+
+inspect(docs[3])
+```
+## Cleaning data
+```{r,cache=TRUE}
+docs <- tm_map(docs, removePunctuation)  
+docs <- tm_map(docs, removeNumbers)   
+docs <- tm_map(docs, tolower)   
+docs <- tm_map(docs, PlainTextDocument)
+DocsCopy <- docs  
+
+docs <- tm_map(docs, removeWords, stopwords("english"))
+docs <- tm_map(docs, PlainTextDocument)
+```
+### summary
+```{r,cache=TRUE}
+BlogWords <- stri_count_words(blogs_samp)
+summary(BlogWords)
+
+TwitterWords <- stri_count_words(twitter_samp)
+summary(TwitterWords)
+
+NewsWords <- stri_count_words(news_samp)
+summary(NewsWords)
+
+stri_stats_general(blogs_samp)
+
+stri_stats_general(twitter_samp)
+
+stri_stats_general(news_samp)
+
+dtm <- DocumentTermMatrix(docs)
+dtm
+
+tdm <- TermDocumentMatrix(docs)
+tdm
+```
+
+## Reviewing clean data
+```{r,cache=TRUE}
+freq <- colSums(as.matrix(dtm))
+length(freq)
+
+dtms <-removeSparseTerms(dtm, 0.2)
+dtms
+
+freq <- colSums(as.matrix(dtm))
+head(table(freq))
+
+tail(table(freq))
+
+freq <- colSums(as.matrix(dtms))
+
+
+freq <- sort(colSums(as.matrix(dtm)), decreasing=TRUE)
+head(freq,20)
+
+wf <- data.frame(word=names(freq), freq=freq)
+head(wf)
+```
+## Create a histogram for words that occur at least 50 times.
+
+```{r,cache=TRUE}
+p <- ggplot(subset(wf, freq>50), aes(x = reorder(word, -freq), y = freq)) +
+        geom_bar(stat = "identity") + 
+        theme(axis.text.x=element_text(angle=45, hjust=1))
+p   
+``` 
+
+## Removal of terms that fall below a specified frequency threshold 
+```{r,cache=TRUE}
+dtms <- removeSparseTerms(dtm, 0.1) 
+
+head(table(freq), 20)  
+
+tail(table(freq), 20)  
+
+freq <- colSums(as.matrix(dtms))   
+```
+## Creating N-grams
+
+NOTE: Because of memory error during the NGramTokenizer my NGram algorithm failed with the legend “Error in .jcall(”RWekaInterfaces“,”[S“,”tokenize“, .jcast (tokenizer, : java.lang.OutOfMemoryError: GC overhead limit exceeded”
+
+If you have any ideas or comments regarding this error I would greatly appreciate them.
+
+## Predictive Analysis
+For the predictive assignment I propose the following workflow for model computation
+
+1.Load Corpus
+2.Clean Each Corpus (as in EDA but replace contractions)
+3.Extract Train/Test/Validation Sets 60/20/20
+4.Build N-Grams on Train (Sizes 1, 2, 3, and 4)
+5.Test Prediction Using (Always k-gram if able, or votes between all k-grams)
+6.Save Chosen Frequency Matrices and Chosen Model
+
+To use the models saved to predict
+
+1.Propose First Word (Most Frequent 1-Gram)
+2.Receive Input Text
+3.Clean Text by Corpus Rules (as in EDA)
+4.Extract Last N-Gram (Sizes 1, 2, 3)
+5.Regex Extracted N-Gram against names on frequency matrices
+6.Choose according to model selected
+
+This will be done once I solve my memory errors in the previous section.
